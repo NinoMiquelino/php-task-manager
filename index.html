@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lista de Tarefas CRUD AJAX</title>
+    <meta name="author" content="Onivaldo Miquelino">          
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style> 
+        body { font-family: ui-sans-serif, system-ui; }
+        .completed-task {
+            text-decoration: line-through;
+            color: #6b7280; /* gray-500 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-6 flex justify-center">
+
+    <div class="w-full max-w-2xl bg-white p-8 rounded-xl shadow-2xl mt-12">
+        <h1 class="text-3xl font-bold text-center text-indigo-700 mb-8">Gerenciador de Tarefas PHP/AJAX</h1>
+        
+        <form id="taskForm" class="flex gap-4 mb-8">
+            <input type="text" id="taskTitle" placeholder="O que precisa ser feito?" required
+                   class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+            <button type="submit" id="addTaskBtn"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition disabled:bg-indigo-300">
+                Adicionar
+            </button>
+        </form>
+
+        <div id="feedback" class="mb-4 p-3 rounded-lg hidden text-sm font-medium"></div>
+
+        <div id="taskList" class="space-y-3">
+            <p class="text-center text-gray-500" id="loadingMessage">Carregando tarefas...</p>
+        </div>
+
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8001/src/api.php';         
+        const taskForm = document.getElementById('taskForm');
+        const taskTitleInput = document.getElementById('taskTitle');
+        const taskList = document.getElementById('taskList');
+        const feedbackDiv = document.getElementById('feedback');
+        const loadingMessage = document.getElementById('loadingMessage');
+
+        // --- Funções de UX e Feedback ---
+
+        function displayFeedback(message, type = 'info') {
+            feedbackDiv.textContent = message;
+            feedbackDiv.classList.remove('hidden', 'bg-red-100', 'bg-green-100', 'bg-blue-100', 'text-red-700', 'text-green-700', 'text-blue-700');
+            
+            if (type === 'error') {
+                feedbackDiv.classList.add('bg-red-100', 'text-red-700');
+            } else if (type === 'success') {
+                feedbackDiv.classList.add('bg-green-100', 'text-green-700');
+            } else {
+                 feedbackDiv.classList.add('bg-blue-100', 'text-blue-700');
+            }
+            feedbackDiv.classList.remove('hidden');
+
+            setTimeout(() => {
+                feedbackDiv.classList.add('hidden');
+            }, 3000);
+        }
+
+        // --- Funções de Renderização ---
+
+        function createTaskElement(task) {
+            const taskDiv = document.createElement('div');
+            taskDiv.id = `task-${task.id}`;
+            taskDiv.className = 'flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-sm';
+            
+            const titleSpan = document.createElement('span');
+            titleSpan.textContent = task.title;
+            titleSpan.className = 'text-gray-900 flex-grow cursor-pointer';
+            if (task.completed) {
+                titleSpan.classList.add('completed-task');
+            }
+
+            // Ação para alternar o status
+            titleSpan.onclick = () => toggleTaskCompleted(task.id, !task.completed);
+
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'flex items-center gap-2 ml-4';
+
+            // Botão Deletar
+            const deleteBtn = document.createElement('button');
+            deleteBtn.innerHTML = '🗑️';
+            deleteBtn.title = 'Excluir Tarefa';
+            deleteBtn.className = 'text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition';
+            deleteBtn.onclick = () => deleteTask(task.id);
+            
+            actionsDiv.appendChild(deleteBtn);
+            taskDiv.appendChild(titleSpan);
+            taskDiv.appendChild(actionsDiv);
+
+            return taskDiv;
+        }
+
+        function renderTasks(tasks) {
+            taskList.innerHTML = '';
+            loadingMessage.classList.add('hidden');
+
+            if (tasks.length === 0) {
+                 taskList.innerHTML = '<p class="text-center text-gray-500">Nenhuma tarefa. Adicione uma nova acima!</p>';
+                 return;
+            }
+
+            tasks.forEach(task => {
+                taskList.appendChild(createTaskElement(task));
+            });
+        }
+        
+        // --- Funções de API (CRUD) ---
+
+        async function fetchTasks() {
+            loadingMessage.classList.remove('hidden');
+            try {
+                const response = await fetch(API_URL);
+                const result = await response.json();
+                
+                if (result.success) {
+                    renderTasks(result.data);
+                } else {
+                    displayFeedback(`Erro ao carregar tarefas: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                displayFeedback('Erro de comunicação com o servidor.', 'error');
+                console.error("Fetch Error:", error);
+            } finally {
+                loadingMessage.classList.add('hidden');
+            }
+        }
+
+        async function createTask(title) {
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: title })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Adiciona o novo elemento ao DOM sem recarregar toda a lista
+                    taskList.prepend(createTaskElement(result.data));
+                    taskTitleInput.value = '';
+                    displayFeedback('Tarefa criada!', 'success');
+                    
+                    // Remove a mensagem "Nenhuma tarefa" se existir
+                    const noTaskMsg = taskList.querySelector('p.text-center');
+                    if (noTaskMsg && taskList.children.length > 0) {
+                        noTaskMsg.remove();
+                    }
+
+                } else {
+                    displayFeedback(`Erro ao criar tarefa: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                displayFeedback('Erro de comunicação.', 'error');
+                console.error("Create Error:", error);
+            }
+        }
+
+        async function toggleTaskCompleted(id, newStatus) {
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id, completed: newStatus })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Atualiza o DOM para refletir o novo status
+                    const taskElement = document.getElementById(`task-${id}`).querySelector('span');
+                    if (result.data.completed) {
+                        taskElement.classList.add('completed-task');
+                        displayFeedback('Tarefa concluída!', 'success');
+                    } else {
+                        taskElement.classList.remove('completed-task');
+                        displayFeedback('Tarefa reaberta.', 'info');
+                    }
+                } else {
+                    displayFeedback(`Erro ao atualizar status: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                displayFeedback('Erro de comunicação.', 'error');
+                console.error("Update Error:", error);
+            }
+        }
+        
+        async function deleteTask(id) {
+            if (!confirm('Tem certeza que deseja excluir esta tarefa?')) {
+                return;
+            }
+            try {
+                const response = await fetch(API_URL + '?id=' + id, {
+                    method: 'DELETE',
+                });
+                
+                // O backend retorna 204 No Content, não há JSON para ler
+                if (response.ok) {
+                    // Remove o elemento do DOM
+                    document.getElementById(`task-${id}`).remove();
+                    displayFeedback('Tarefa excluída.', 'info');
+                    
+                    // Se a lista ficar vazia, exibe a mensagem de lista vazia
+                    if (taskList.children.length === 0) {
+                         taskList.innerHTML = '<p class="text-center text-gray-500">Nenhuma tarefa. Adicione uma nova acima!</p>';
+                    }
+
+                } else {
+                    const result = await response.json(); // Tenta ler o erro
+                    displayFeedback(`Erro ao excluir: ${result.error || 'Erro desconhecido.'}`, 'error');
+                }
+            } catch (error) {
+                displayFeedback('Erro de comunicação.', 'error');
+                console.error("Delete Error:", error);
+            }
+        }
+
+        // --- Event Listeners ---
+        
+        taskForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const title = taskTitleInput.value.trim();
+            if (title) {
+                createTask(title);
+            } else {
+                displayFeedback('Por favor, insira um título.', 'info');
+            }
+        });
+
+        // --- Inicialização ---
+
+        document.addEventListener('DOMContentLoaded', fetchTasks);
+    </script>
+</body>
+</html>
+    
